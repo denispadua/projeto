@@ -44,6 +44,13 @@ class TSPDecoder():
             chave += valor * (10 ** i)
         return chave
 
+    def calcular_penalizacao(self, row):
+        soma = 0
+        soma += sum(row)
+        if soma:
+            return (sum(row)-1)*100
+        return soma + 100
+
     def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int):
         self.instance = instance
         self.df_original = self.instance.df.copy()
@@ -77,6 +84,10 @@ class TSPDecoder():
         cromossomos_df.reset_index()
 
         self.instance.df = pd.concat([self.instance.df, cromossomos_df], axis=1)
+
+        self.instance.df["PENALIDADE"] = self.instance.df[colunas_grupos].apply(self.calcular_penalizacao, axis=1)
+
+        penalidade_cliente = self.instance.df["PENALIDADE"].sum()        
 
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
         for i in range(0,self.qtd_grupos):
@@ -117,10 +128,16 @@ class TSPDecoder():
         matriz = matriz.transpose()
 
         #verifica se clientes com a mesma chave estão em mais de um grupo
+        penalidade_grupo = 0
+        fator_penalidade = 1000
         for item in matriz:
             soma_grupo_chave = sum(item.tolist()[0])
-            if soma_grupo_chave not in item.tolist()[0]:
-                return np.inf
+            diferenca_soma_maior = soma_grupo_chave - max(item.tolist()[0])
+            if diferenca_soma_maior != 0:
+                penalidade_grupo += fator_penalidade * (diferenca_soma_maior / soma_grupo_chave)
+        
+        #se eu quero minimizar, significa que a penalidade deve ser negativa, pois o resultado será positivo para gerações penalizadas
+        #se eu quero maximizar, a penalizade deve ser positiva, pois o valor negativo vai ser multiplicado por um fator positivo, diminuindo o número
 
         #se os clientes não estão em mais de um grupo, calcula o alfa
         divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, self.instance.df['Taxa'].unique().tolist()), axis=1)
@@ -133,4 +150,4 @@ class TSPDecoder():
         for idx in range(0,len(item)-1):
             soma += round(item[idx+1],2) - round(item[idx],2)
         
-        return soma
+        return soma + penalidade_cliente + penalidade_grupo
