@@ -138,15 +138,6 @@ class TSPDecoder():
         divisao.index = self.instance.df['Taxa'].unique().tolist()
         del divisao['index']
         divisao = divisao.transpose()
-
-        #verifica se clientes com a mesma chave estão em mais de um grupo
-        penalidade_grupo = 0
-        fator_penalidade = 1000            
-        for i in range(1, 5):
-            soma_grupo_chave = sum(list(contagem_grupos[f"G{i}"]))
-            diferenca_soma_maior = soma_grupo_chave - max(list(contagem_grupos[f"G{i}"]))
-            if diferenca_soma_maior != 0:
-                penalidade_grupo += fator_penalidade * (diferenca_soma_maior / soma_grupo_chave)
         
         #se os clientes não estão em mais de um grupo, calcula o alfa
         divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, self.instance.df['Taxa'].unique().tolist()), axis=1)
@@ -159,9 +150,9 @@ class TSPDecoder():
         for idx in range(0,len(item)-1):
             soma += round(item[idx+1],2) - round(item[idx],2)
         
-        print(soma + penalidade_grupo)
+        print(soma)
 
-        return soma + penalidade_grupo
+        return soma
 
 import pandas as pd
 import random
