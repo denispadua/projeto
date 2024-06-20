@@ -150,8 +150,6 @@ class TSPDecoder():
         for idx in range(0,len(item)-1):
             soma += round(item[idx+1],2) - round(item[idx],2)
         
-        print(soma)
-
         return soma
 
 import pandas as pd
