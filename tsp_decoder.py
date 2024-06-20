@@ -26,6 +26,7 @@ from tsp_instance import TSPInstance
 import numpy as np
 import pandas as pd
 
+
 class TSPDecoder():
     
     def calcular_alfa(self, row, columns):
@@ -56,89 +57,97 @@ class TSPDecoder():
         self.df_original = self.instance.df.copy()
         self.qtd_grupos = qtd_grupos
         self.qtd_variaveis = qtd_variaveis
+        self.dict = {}
+    
+    def calcular_grupo(self, row):
+        if self.dict.get(row['CHAVE'], None) is None:
+            self.dict[row['CHAVE']] = row['GRUPO_PROVISORIO']
+        return self.dict[row['CHAVE']]
+    
+    def definir_grupo(self, row, idx):
+        return 1 if idx == dict[row['CHAVE']] else 0
 
     ###########################################################################
 
     def decode(self, chromosome: BaseChromosome, rewrite: bool) -> float:
 
         self.instance.df = self.df_original.copy()
+        self.dict = {}
         
         #transforma os cromossomos recebidos para 0 e 1 
-        cromossomos = [1 if value > 0.5 else 0 for value in chromosome]
+        cromossomos_feature = [1 if value > 0.5 else 0 for value in chromosome[0:self.qtd_variaveis]]
 
         #multiplica as variáveis pelos cromossomos.
         colunas = ['Compr_Renda', 'Nivel_Escolaridade', 'Estado_Civil', 'Regiao', 'Nivel_Risco_Novo']
-        self.instance.df[colunas] = self.instance.df[colunas]*cromossomos[0:self.qtd_variaveis]
-
-        
-        cromossomos = np.matrix(cromossomos[self.qtd_variaveis:])
-        cromossomos = cromossomos.reshape(len(self.instance.df.index),self.qtd_grupos)
+        self.instance.df[colunas] = self.instance.df[colunas]*cromossomos_feature
 
         #Gera as chaves
         self.instance.df["CHAVE"] = self.instance.df[colunas].apply(self.calcular_chave, axis=1)
         self.instance.df.reset_index()
 
+        cromossomos = chromosome[self.qtd_variaveis:]
+        grupos_provisorios = []
+        for element in cromossomos:
+            if element < 0.25:
+                grupos_provisorios.append(1)
+            elif element < 0.5:
+                grupos_provisorios.append(2)
+            elif element < 0.75:
+                grupos_provisorios.append(3)
+            else:
+                grupos_provisorios.append(4)
+
         #Cria um dataframe de cromossomos G1,G2,G3 e G4
-        colunas_grupos = [f"G{i+1}" for i in range(0, self.qtd_grupos)]
-        cromossomos_df = pd.DataFrame(cromossomos, columns=colunas_grupos)
+        cromossomos_df = pd.DataFrame(cromossomos, columns=['CROMOSSOMOS'])
         cromossomos_df.reset_index()
+        grupo_provisorio = pd.DataFrame(grupos_provisorios, columns=['GRUPO_PROVISORIO'])
+        grupo_provisorio.reset_index()
 
-        self.instance.df = pd.concat([self.instance.df, cromossomos_df], axis=1)
+        self.instance.df = pd.concat([self.instance.df, cromossomos_df, grupo_provisorio], axis=1)
 
-        self.instance.df["PENALIDADE"] = self.instance.df[colunas_grupos].apply(self.calcular_penalizacao, axis=1)
-
-        penalidade_cliente = self.instance.df["PENALIDADE"].sum()        
-
+        self.instance.df['GRUPO_FINAL'] = self.instance.df[['CHAVE', 'GRUPO_PROVISORIO']].apply(self.calcular_grupo, axis=1)
+    
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
+        for i in range(1, 5):
+            self.instance.df[f"G{i}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i), axis=1)
+
         for i in range(0,self.qtd_grupos):
             self.instance.df[f"E{i+1}"] = self.instance.df[f"G{i+1}"] * self.instance.df["Flag_Efet"]
 
         #Conta a quantidade de grupos por taxa
-        ls_contagem = []
-        for i in range(0, self.qtd_grupos):
-            result = self.instance.df.groupby([f"G{i+1}", "Taxa"]).size().drop(0)
-            ls_contagem.append(result)
-        ls_contagem = np.array(ls_contagem)
+        contagem_grupos = (self.instance.df.set_index('Taxa').filter(regex='G[0-9]').eq(1)
+         .groupby(level='Taxa').sum()
+        )
+        ls_contagem = np.array(contagem_grupos)
 
-        tabela_unificada = pd.DataFrame(ls_contagem, columns=self.instance.df['Taxa'].unique().tolist())
+        tabela_unificada = pd.DataFrame(ls_contagem, columns=["T1", "T2", "T3", "T4"])
+        tabela_unificada.index = self.instance.df['Taxa'].unique().tolist()
 
         #conta a quantidade de efetivados por taxa
-        ls_efetivados = []
-        for i in range(0, self.qtd_grupos):
-            result = self.instance.df.groupby([f"E{i+1}", "Taxa"]).size().drop(0)
-            ls_efetivados.append(result)
-        ls_efetivados = np.array(ls_efetivados)
+        contagem_efetivados = (self.instance.df.set_index('Taxa').filter(regex='E[0-9]').eq(1)
+         .groupby(level='Taxa').sum()
+        )
+        ls_efetivados = np.array(contagem_efetivados)
+        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=["T1", "T2", "T3", "T4"])
+        tabela_efetivados.index = self.instance.df['Taxa'].unique().tolist()
 
-        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=self.instance.df['Taxa'].unique().tolist())
 
         #gera a tabela de percentual grupo por taxa
         divisao = tabela_efetivados.div(tabela_unificada).reset_index()
-        divisao = divisao.apply(lambda c: round(c,3))
-
-        #conta a quantidade de grupos cada cliente com a mesma chave participa
-        df_melt = self.instance.df.melt(id_vars='CHAVE', value_vars=colunas_grupos, value_name='presenca')
-        contagem_grupos = df_melt.groupby(['CHAVE', 'variable']).agg(sum_presenca=('presenca', 'sum')).unstack()
-        contagem_grupos.columns = ['_'.join(col) for col in contagem_grupos.columns]
-
-        listas = []
-        for i in range(0, self.qtd_grupos):
-            listas.append(contagem_grupos[f"sum_presenca_G{i+1}"].to_list())
-        
-        matriz = np.matrix(listas)
-        matriz = matriz.transpose()
+        divisao = divisao.apply(lambda c: round(c,3)).fillna(0)
+        divisao.index = self.instance.df['Taxa'].unique().tolist()
+        del divisao['index']
+        divisao = divisao.transpose()
 
         #verifica se clientes com a mesma chave estão em mais de um grupo
         penalidade_grupo = 0
-        fator_penalidade = 1000
-        for item in matriz:
-            soma_grupo_chave = sum(item.tolist()[0])
-            diferenca_soma_maior = soma_grupo_chave - max(item.tolist()[0])
+        fator_penalidade = 1000            
+        for i in range(1, 5):
+            soma_grupo_chave = sum(list(contagem_grupos[f"G{i}"]))
+            diferenca_soma_maior = soma_grupo_chave - max(list(contagem_grupos[f"G{i}"]))
             if diferenca_soma_maior != 0:
                 penalidade_grupo += fator_penalidade * (diferenca_soma_maior / soma_grupo_chave)
         
-        #se eu quero minimizar, significa que a penalidade deve ser negativa, pois o resultado será positivo para gerações penalizadas
-        #se eu quero maximizar, a penalizade deve ser positiva, pois o valor negativo vai ser multiplicado por um fator positivo, diminuindo o número
-
         #se os clientes não estão em mais de um grupo, calcula o alfa
         divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, self.instance.df['Taxa'].unique().tolist()), axis=1)
         #converte o alfa e ordena
@@ -149,5 +158,18 @@ class TSPDecoder():
         soma = 0
         for idx in range(0,len(item)-1):
             soma += round(item[idx+1],2) - round(item[idx],2)
-        
-        return soma + penalidade_cliente + penalidade_grupo
+                
+        return soma + penalidade_grupo
+
+# import pandas as pd
+# import random
+
+# instance = TSPInstance('Base_Otimização_Final.csv')
+# colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+# colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+# instance.df.drop(colunas_removidas, axis=1, inplace=True)
+# instance.tratamento_dados()
+# instance.df_original = instance.df.copy()
+# decoder = TSPDecoder(instance, 4, 5)
+# cromossomos = [random.random() for _ in range(len(instance.df.index)+5)]
+# print(decoder.decode(cromossomos, False))
