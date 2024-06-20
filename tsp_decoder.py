@@ -152,15 +152,15 @@ class TSPDecoder():
         
         return soma
 
-import pandas as pd
-import random
+# import pandas as pd
+# import random
 
-instance = TSPInstance('Base_Otimização_Final.csv')
-colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
-colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
-instance.df.drop(colunas_removidas, axis=1, inplace=True)
-instance.tratamento_dados()
-instance.df_original = instance.df.copy()
-decoder = TSPDecoder(instance, 4, 5)
-cromossomos = [random.random() for _ in range(len(instance.df.index)+5)]
-print(decoder.decode(cromossomos, False))
+# instance = TSPInstance('Base_Otimização_Final.csv')
+# colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+# colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+# instance.df.drop(colunas_removidas, axis=1, inplace=True)
+# instance.tratamento_dados()
+# instance.df_original = instance.df.copy()
+# decoder = TSPDecoder(instance, 4, 5)
+# cromossomos = [random.random() for _ in range(len(instance.df.index)+5)]
+# print(decoder.decode(cromossomos, False))
