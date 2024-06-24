@@ -45,18 +45,12 @@ class TSPDecoder():
             chave += valor * (10 ** i)
         return chave
 
-    def calcular_penalizacao(self, row):
-        soma = 0
-        soma += sum(row)
-        if soma:
-            return (sum(row)-1)*100
-        return soma + 100
-
-    def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int):
+    def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int, qtd_min_por_grupo = 0):
         self.instance = instance
         self.df_original = self.instance.df.copy()
         self.qtd_grupos = qtd_grupos
         self.qtd_variaveis = qtd_variaveis
+        self.qtd_min_por_grupo = qtd_min_por_grupo
         self.dict = {}
     
     def calcular_grupo(self, row):
@@ -87,15 +81,13 @@ class TSPDecoder():
 
         cromossomos = chromosome[self.qtd_variaveis:]
         grupos_provisorios = []
-        for element in cromossomos:
-            if element < 0.25:
-                grupos_provisorios.append(1)
-            elif element < 0.5:
-                grupos_provisorios.append(2)
-            elif element < 0.75:
-                grupos_provisorios.append(3)
-            else:
-                grupos_provisorios.append(4)
+        divisao_partes = [{key:(1/self.qtd_grupos)*key} for key in range(1,self.qtd_grupos)]
+        for cromossomo in cromossomos:
+            for key, value in enumerate(divisao_partes):
+                if cromossomo <= value[key+1]:
+                    break
+            grupos_provisorios.append(key+1)
+
 
         #Cria um dataframe de cromossomos G1,G2,G3 e G4
         cromossomos_df = pd.DataFrame(cromossomos, columns=['CROMOSSOMOS'])
@@ -108,8 +100,8 @@ class TSPDecoder():
         self.instance.df['GRUPO_FINAL'] = self.instance.df[['CHAVE', 'GRUPO_PROVISORIO']].apply(self.calcular_grupo, axis=1)
     
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
-        for i in range(1, 5):
-            self.instance.df[f"G{i}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i), axis=1)
+        for i in range(0, self.qtd_grupos):
+            self.instance.df[f"G{i+1}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i), axis=1)
 
         for i in range(0,self.qtd_grupos):
             self.instance.df[f"E{i+1}"] = self.instance.df[f"G{i+1}"] * self.instance.df["Flag_Efet"]
@@ -120,7 +112,7 @@ class TSPDecoder():
         )
         ls_contagem = np.array(contagem_grupos)
 
-        tabela_unificada = pd.DataFrame(ls_contagem, columns=["T1", "T2", "T3", "T4"])
+        tabela_unificada = pd.DataFrame(ls_contagem, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
         tabela_unificada.index = self.instance.df['Taxa'].unique().tolist()
 
         #conta a quantidade de efetivados por taxa
@@ -128,7 +120,7 @@ class TSPDecoder():
          .groupby(level='Taxa').sum()
         )
         ls_efetivados = np.array(contagem_efetivados)
-        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=["T1", "T2", "T3", "T4"])
+        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
         tabela_efetivados.index = self.instance.df['Taxa'].unique().tolist()
 
 
@@ -149,18 +141,11 @@ class TSPDecoder():
         soma = 0
         for idx in range(0,len(item)-1):
             soma += round(item[idx+1],2) - round(item[idx],2)
+
+        penalizacao = 0
+        for i in range(0, self.qtd_grupos):
+            total = self.instance.df[f"G{i+1}"].sum()
+            if total < self.qtd_min_por_grupo:
+                penalizacao += 1000
         
-        return soma
-
-# import pandas as pd
-# import random
-
-# instance = TSPInstance('Base_Otimização_Final.csv')
-# colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
-# colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
-# instance.df.drop(colunas_removidas, axis=1, inplace=True)
-# instance.tratamento_dados()
-# instance.df_original = instance.df.copy()
-# decoder = TSPDecoder(instance, 4, 5)
-# cromossomos = [random.random() for _ in range(len(instance.df.index)+5)]
-# print(decoder.decode(cromossomos, False))
+        return soma - sum(cromossomos_feature)*self.qtd_variaveis - penalizacao
