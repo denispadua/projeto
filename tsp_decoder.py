@@ -148,23 +148,4 @@ class TSPDecoder():
             if total < self.qtd_min_por_grupo:
                 penalizacao += 1000
         
-        # if soma - penalizacao == 77.5:
-        #     print(cromossomos_feature)
-        #     self.instance.df.to_excel('saida_25_06.xlsx')
-        #     divisao.to_excel('alfa_25_06.xlsx')
-        #     tabela_unificada.to_excel('unificada_25_06.xlsx')
-        #     tabela_efetivados.to_excel('efetivados_25_06.xlsx')
         return soma - penalizacao
-
-# import pandas as pd
-# import random
-
-# instance = TSPInstance('Base_Otimização_Final.csv')
-# colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
-# colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
-# instance.df.drop(colunas_removidas, axis=1, inplace=True)
-# instance.tratamento_dados()
-# instance.df_original = instance.df.copy()
-# decoder = TSPDecoder(instance=instance, qtd_grupos=7,  qtd_variaveis=5, qtd_min_por_grupo=20)
-# cromossomos = pd.read_csv("cromossomos_saida_estranha.csv")['CROMOSSOMOS'].to_list()
-# print(decoder.decode(cromossomos, False))
