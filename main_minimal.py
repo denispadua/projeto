@@ -37,6 +37,12 @@ from tsp_decoder import TSPDecoder
 def imprimir_saida(cromossomos, instance_file, qtd_grupos, qtd_variaveis, qtd_min_por_grupo):
 
     instance = TSPInstance(instance_file)
+
+    #remova essas 3 linhas caso queira o dataset com todas as colunas
+    colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+    colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+    instance.df.drop(colunas_removidas, axis=1, inplace=True)
+
     instance.tratamento_dados()
     instance.df_original = instance.df.copy()
     decoder = TSPDecoder(instance, qtd_grupos, qtd_variaveis, qtd_min_por_grupo)
@@ -61,9 +67,9 @@ def main() -> None:
     print("Reading data...")
     instance = TSPInstance(instance_file)
 
-    # colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
-    # colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
-    # instance.df.drop(colunas_removidas, axis=1, inplace=True)
+    colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+    colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+    instance.df.drop(colunas_removidas, axis=1, inplace=True)
     instance.tratamento_dados()
     instance.df_original = instance.df.copy()
 

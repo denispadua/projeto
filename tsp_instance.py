@@ -51,12 +51,14 @@ class TSPInstance():
             "25% a 30%": 6,
             "30%+": 7
         }
+        self.df['Compr_Renda_pre_processada'] = self.df['Compr_Renda'].copy()
         self.df['Compr_Renda'] = self.df['Compr_Renda'].map(dict_compr_renda)
 
         dict_nivel_escolaridade = {
             "Med_e_Sup_Inc": 1,
             "Sup_e_Pos": 2
         }
+        self.df['Nivel_Escolaridade_pre_processada'] = self.df['Nivel_Escolaridade'].copy()
         self.df['Nivel_Escolaridade'] = self.df['Nivel_Escolaridade'].map(dict_nivel_escolaridade)
 
         dict_estado_civil = {
@@ -65,6 +67,7 @@ class TSPInstance():
             "Solteiro": 3,
             "Viuvo": 4
         }
+        self.df['Estado_Civil_pre_processada'] = self.df['Estado_Civil'].copy()
         self.df['Estado_Civil'] = self.df['Estado_Civil'].map(dict_estado_civil)
 
         dict_regiao = {
@@ -74,6 +77,8 @@ class TSPInstance():
             "Sudeste": 4,
             "Sul": 5
         }
+        self.df['Regiao_pre_processada'] = self.df['Regiao'].copy()
         self.df['Regiao'] = self.df['Regiao'].map(dict_regiao)
 
+        self.df['Nivel_Risco_pre_processada'] = self.df['Nivel_Risco_Novo'].copy()
         self.df['Nivel_Risco_Novo'] = self.df['Nivel_Risco_Novo'].map(lambda v: v+1)
