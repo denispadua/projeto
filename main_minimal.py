@@ -34,6 +34,15 @@ from tsp_decoder import TSPDecoder
 
 ###############################################################################
 
+def imprimir_saida(cromossomos, instance_file, qtd_grupos, qtd_variaveis, qtd_min_por_grupo):
+
+    instance = TSPInstance(instance_file)
+    instance.tratamento_dados()
+    instance.df_original = instance.df.copy()
+    decoder = TSPDecoder(instance, qtd_grupos, qtd_variaveis, qtd_min_por_grupo)
+    print(decoder.decode(cromossomos, False))
+    instance.df.to_excel("saida_final.xlsx")
+
 def main() -> None:
     if len(sys.argv) < 4:
         print("Usage: python main_minimal.py <seed> <config-file> "
@@ -52,9 +61,9 @@ def main() -> None:
     print("Reading data...")
     instance = TSPInstance(instance_file)
 
-    colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
-    colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
-    instance.df.drop(colunas_removidas, axis=1, inplace=True)
+    # colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+    # colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+    # instance.df.drop(colunas_removidas, axis=1, inplace=True)
     instance.tratamento_dados()
     instance.df_original = instance.df.copy()
 
@@ -71,18 +80,22 @@ def main() -> None:
 
     print("Building BRKGA data and initializing...")
 
-    decoder = TSPDecoder(instance, 4, 5)
-    instance.num_nodes = 4*len(instance.df.index)+5
+    #definir valores
+    instance = instance
+    qtd_grupos = 6
+    qtd_variaveis = 5
+    qtd_min_por_grupo = 50
+
+    decoder = TSPDecoder(instance, qtd_grupos, qtd_variaveis, qtd_min_por_grupo)
+    instance.num_nodes = len(instance.df.index)+qtd_variaveis
 
     brkga = BrkgaMpIpr(
         decoder=decoder,
-        sense=Sense.MINIMIZE,
+        sense=Sense.MAXIMIZE,
         seed=seed,
         chromosome_size=instance.num_nodes,
         params=brkga_params
     )
-
-
 
     # NOTE: don't forget to initialize the algorithm.
     brkga.initialize()
@@ -96,6 +109,9 @@ def main() -> None:
 
     best_cost = brkga.get_best_fitness()
     print(f"Best cost: {best_cost}")
+
+    best_chromosome = brkga.get_best_chromosome()
+    imprimir_saida(best_chromosome, instance_file, qtd_grupos, qtd_variaveis, qtd_min_por_grupo)
 
 ###############################################################################
 

@@ -148,4 +148,17 @@ class TSPDecoder():
             if total < self.qtd_min_por_grupo:
                 penalizacao += 1000
         
+        self.instance.df.to_excel("solucao.xlsx")
         return soma - penalizacao
+
+import pandas as pd
+
+instance = TSPInstance('Base_Otimização_Final.csv')
+colunas_selecionadas = ['Compr_Renda', 'Nivel_Escolaridade', 'Taxa', 'Estado_Civil', 'Regiao', 'Flag_Efet', 'Nivel_Risco_Novo']
+colunas_removidas = [col for col in instance.df.columns if col not in colunas_selecionadas]
+instance.df.drop(colunas_removidas, axis=1, inplace=True)
+instance.tratamento_dados()
+instance.df_original = instance.df.copy()
+decoder = TSPDecoder(instance, 6, 5, 50)
+cromossomos = pd.read_excel("melhor_cromossomo.xlsx")[0].to_list()
+print(decoder.decode(cromossomos, False))
