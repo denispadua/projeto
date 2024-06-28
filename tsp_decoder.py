@@ -111,9 +111,11 @@ class TSPDecoder():
          .groupby(level='Taxa').sum()
         )
         ls_contagem = np.array(contagem_grupos)
+        taxas = self.instance.df['Taxa'].unique().tolist()
+        taxas.sort()
 
         tabela_unificada = pd.DataFrame(ls_contagem, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
-        tabela_unificada.index = self.instance.df['Taxa'].unique().tolist()
+        tabela_unificada.index = taxas
 
         #conta a quantidade de efetivados por taxa
         contagem_efetivados = (self.instance.df.set_index('Taxa').filter(regex='E[0-9]').eq(1)
@@ -121,18 +123,18 @@ class TSPDecoder():
         )
         ls_efetivados = np.array(contagem_efetivados)
         tabela_efetivados = pd.DataFrame(ls_efetivados, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
-        tabela_efetivados.index = self.instance.df['Taxa'].unique().tolist()
+        tabela_efetivados.index = taxas
 
 
         #gera a tabela de percentual grupo por taxa
         divisao = tabela_efetivados.div(tabela_unificada).reset_index()
         divisao = divisao.apply(lambda c: round(c,3)).fillna(0)
-        divisao.index = self.instance.df['Taxa'].unique().tolist()
+        divisao.index = taxas
         del divisao['index']
         divisao = divisao.transpose()
         
         #se os clientes não estão em mais de um grupo, calcula o alfa
-        divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, self.instance.df['Taxa'].unique().tolist()), axis=1)
+        divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
         #converte o alfa e ordena
         item = divisao["Alfa"].to_list()
         item.sort()
@@ -147,6 +149,6 @@ class TSPDecoder():
             total = self.instance.df[f"G{i+1}"].sum()
             if total < self.qtd_min_por_grupo:
                 penalizacao += 1000
-        
+
         return soma - penalizacao
 
