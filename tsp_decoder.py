@@ -28,22 +28,6 @@ import pandas as pd
 
 
 class TSPDecoder():
-    
-    def calcular_alfa(self, row, columns):
-        soma_linha = sum([row[i]*i for i in columns])
-        taxas_2 = [i*i for i in columns]
-        linhas_sem_taxas = sum(row[i] for i in columns)
-
-        n = 5*soma_linha-sum(columns) * linhas_sem_taxas
-        d = 5*sum(taxas_2) - sum(columns)**2
-
-        return (n / d)*100
-    
-    def calcular_chave(self, row):
-        chave = 0
-        for i, valor in enumerate(row):
-            chave += valor * (10 ** i)
-        return chave
 
     def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int, qtd_min_por_grupo = 0):
         self.instance = instance
@@ -52,16 +36,78 @@ class TSPDecoder():
         self.qtd_variaveis = qtd_variaveis
         self.qtd_min_por_grupo = qtd_min_por_grupo
         self.dict = {}
+        self.dict_grupos = {}
     
+    def calcular_alfa(self, row, columns):
+        soma_linha = sum([row[i]*i for i in columns])
+        taxas_2 = [i*i for i in columns]
+        linhas_sem_taxas = sum(row[i] for i in columns)
+
+        n = 5*soma_linha-sum(columns) * linhas_sem_taxas
+        d = 5*sum(taxas_2) - sum(columns)**2
+        return (n / d)*100
+    
+    def calcular_chave(self, row):
+        chave = 0
+        for i, valor in enumerate(row):
+            chave += valor * (10 ** i)
+        return chave
+
     def calcular_grupo(self, row):
-        if self.dict.get(row['CHAVE'], None) is None:
-            self.dict[row['CHAVE']] = row['GRUPO_PROVISORIO']
-        return self.dict[row['CHAVE']]
+        return self.dict[int(row['CHAVE'])]
+    
+    def mapear_grupo(self, row):
+        if self.dict_grupos.get(row["CHAVE"], None) is None:
+            self.dict_grupos[row["CHAVE"]] = row["GRUPOS"]
     
     def definir_grupo(self, row, idx):
-        return 1 if idx == self.dict[row['CHAVE']] else 0
+        return 1 if idx == row["GRUPO_FINAL"] else 0
 
+    def distribui_valores(self, tamanho_lista, valores):
+        quociente, resto = divmod(tamanho_lista, len(valores))
+
+        lista_distribuida = []
+        for valor in valores:
+            lista_distribuida.extend([valor] * quociente)
+
+        lista_distribuida += [len(valores)] * resto
+        return lista_distribuida
     ###########################################################################
+
+    def definir_grupo_provisorio(self, row):
+        return self.dict_grupos.get(row['CHAVE'])
+    
+    def calcular_grupo_final(self, grupos_provisorios, alfa_list):
+        grupo_final = []
+        i = 0
+        while i < len(grupos_provisorios)-1:
+            if grupos_provisorios[i] != grupos_provisorios[i+1]:
+
+                if abs(alfa_list[i+1] + alfa_list[i]) > abs(alfa_list[i] + alfa_list[i-1]):
+                    grupo_final.append(grupos_provisorios[i])
+                elif abs(alfa_list[i+1] + alfa_list[i]) < abs(alfa_list[i] + alfa_list[i-1]):
+                    grupo_final.append(grupos_provisorios[i+1])
+                else:
+                    grupo_final.append(grupos_provisorios[i])
+            else:
+                grupo_final.append(grupos_provisorios[i])
+
+            i+=1
+        grupo_final.append(grupos_provisorios[len(grupos_provisorios)-1])
+        return grupo_final
+    
+    def gerar_alfa_cliente(self, taxas):
+        chave_taxa = pd.pivot_table(self.instance.df[["CHAVE", "Taxa"]], index='CHAVE', columns='Taxa', aggfunc=len, fill_value=0)
+        chave_taxa = pd.DataFrame(chave_taxa, columns=taxas)
+        chave_taxa_alfa = chave_taxa.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
+
+        self.dict = chave_taxa_alfa.to_dict()   
+        tamanho = chave_taxa_alfa.count()
+        chave_taxa_alfa = pd.DataFrame(chave_taxa_alfa, columns=["ALFA"]).reset_index("CHAVE")
+        chave_taxa_alfa.sort_values("ALFA", inplace=True)
+        chave_taxa_alfa.reset_index(inplace=True)
+        return chave_taxa_alfa, tamanho
+
 
     def decode(self, chromosome: BaseChromosome, rewrite: bool) -> float:
 
@@ -77,52 +123,67 @@ class TSPDecoder():
 
         #Gera as chaves
         self.instance.df["CHAVE"] = self.instance.df[colunas].apply(self.calcular_chave, axis=1)
-        self.instance.df.reset_index()
+        # self.instance.df.reset_index()
+
+        #lista_de_taxas ordenadas
+        taxas = self.instance.df['Taxa'].unique().tolist()
+        taxas.sort()
+        
+        chaves_alfa, tamanho = self.gerar_alfa_cliente(taxas)
+             
+
+        self.instance.df["ALFA"] = self.instance.df[["CHAVE"]].apply(self.calcular_grupo, axis=1)
 
         cromossomos = chromosome[self.qtd_variaveis:]
-        grupos_provisorios = []
-        divisao_partes = [{key:(1/self.qtd_grupos)*key} for key in range(1,self.qtd_grupos+1)]
-        for cromossomo in cromossomos:
-            for key, value in enumerate(divisao_partes):
-                if cromossomo <= value[key+1]:
-                    break
-            grupos_provisorios.append(key+1)
+        grupos_provisorios = self.distribui_valores(tamanho, [i+1 for i in range(tamanho)])
+        df_provisorio = pd.DataFrame(grupos_provisorios, columns=["GRUPOS"])
+        concatenado = pd.concat([chaves_alfa, df_provisorio], axis=1)
+        del concatenado["index"]
 
-
+        self.instance.df.sort_values("CHAVE", inplace=True)
+        concatenado.apply(self.mapear_grupo, axis=1)
         #Cria um dataframe de cromossomos G1,G2,G3 e G4
+
+        self.instance.df["GRUPO_PROVISORIO"] = self.instance.df.apply(self.definir_grupo_provisorio, axis=1)
+
         cromossomos_df = pd.DataFrame(cromossomos, columns=['CROMOSSOMOS'])
-        cromossomos_df.reset_index()
-        grupo_provisorio = pd.DataFrame(grupos_provisorios, columns=['GRUPO_PROVISORIO'])
-        grupo_provisorio.reset_index()
+        cromossomos_df.reset_index(drop=True)
 
-        self.instance.df = pd.concat([self.instance.df, cromossomos_df, grupo_provisorio], axis=1)
+        self.instance.df.reset_index(drop=True, inplace=True)
+        self.instance.df = pd.concat([self.instance.df, cromossomos_df], axis=1)
 
-        self.instance.df['GRUPO_FINAL'] = self.instance.df[['CHAVE', 'GRUPO_PROVISORIO']].apply(self.calcular_grupo, axis=1)
+        alfa_list = self.instance.df["ALFA"].to_list()
+        grupos_provisorios = self.instance.df["GRUPO_PROVISORIO"].to_list()
+
+        grupo_final = self.calcular_grupo_final(grupos_provisorios, alfa_list)
+
+
+        self.instance.df['GRUPO_FINAL'] = grupo_final
     
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
-        for i in range(0, self.qtd_grupos):
+        for i in range(0, tamanho):
             self.instance.df[f"G{i+1}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i+1), axis=1)
 
-        for i in range(0,self.qtd_grupos):
+        for i in range(0, tamanho):
             self.instance.df[f"E{i+1}"] = self.instance.df[f"G{i+1}"] * self.instance.df["Flag_Efet"]
 
         #Conta a quantidade de grupos por taxa
-        contagem_grupos = (self.instance.df.set_index('Taxa').filter(regex='G[0-9]').eq(1)
+        contagem_grupos = (self.instance.df.set_index('Taxa').filter(regex='G[0-9]+').eq(1)
          .groupby(level='Taxa').sum()
         )
         ls_contagem = np.array(contagem_grupos)
         taxas = self.instance.df['Taxa'].unique().tolist()
         taxas.sort()
 
-        tabela_unificada = pd.DataFrame(ls_contagem, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
+        tabela_unificada = pd.DataFrame(ls_contagem, columns=[f"G{i+1}" for i in range(0, tamanho)])
         tabela_unificada.index = taxas
 
         #conta a quantidade de efetivados por taxa
-        contagem_efetivados = (self.instance.df.set_index('Taxa').filter(regex='E[0-9]').eq(1)
+        contagem_efetivados = (self.instance.df.set_index('Taxa').filter(regex='E[0-9]+').eq(1)
          .groupby(level='Taxa').sum()
         )
         ls_efetivados = np.array(contagem_efetivados)
-        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=[f"G{i+1}" for i in range(0, self.qtd_grupos)])
+        tabela_efetivados = pd.DataFrame(ls_efetivados, columns=[f"G{i+1}" for i in range(0, tamanho)])
         tabela_efetivados.index = taxas
 
 
@@ -145,7 +206,7 @@ class TSPDecoder():
             soma += round(item[idx+1],2) - round(item[idx],2)
 
         penalizacao = 0
-        for i in range(0, self.qtd_grupos):
+        for i in range(0, tamanho):
             total = self.instance.df[f"G{i+1}"].sum()
             if total < self.qtd_min_por_grupo:
                 penalizacao += 1000
