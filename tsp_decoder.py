@@ -45,7 +45,7 @@ class TSPDecoder():
 
         n = 5*soma_linha-sum(columns) * linhas_sem_taxas
         d = 5*sum(taxas_2) - sum(columns)**2
-        return (n / d)*100
+        return (n / d)
     
     def calcular_chave(self, row):
         chave = 0
@@ -79,10 +79,9 @@ class TSPDecoder():
     
     def calcular_grupo_final(self, grupos_provisorios, alfa_list):
         grupo_final = []
-        i = 0
-        while i < len(grupos_provisorios)-1:
+        alfa_list.sort()
+        for i in range(0, len(grupos_provisorios)-1):
             if grupos_provisorios[i] != grupos_provisorios[i+1]:
-
                 if abs(alfa_list[i+1] + alfa_list[i]) > abs(alfa_list[i] + alfa_list[i-1]):
                     grupo_final.append(grupos_provisorios[i])
                 elif abs(alfa_list[i+1] + alfa_list[i]) < abs(alfa_list[i] + alfa_list[i-1]):
@@ -91,8 +90,7 @@ class TSPDecoder():
                     grupo_final.append(grupos_provisorios[i])
             else:
                 grupo_final.append(grupos_provisorios[i])
-
-            i+=1
+                
         grupo_final.append(grupos_provisorios[len(grupos_provisorios)-1])
         return grupo_final
     
@@ -132,9 +130,8 @@ class TSPDecoder():
         chaves_alfa, tamanho = self.gerar_alfa_cliente(taxas)
              
 
-        self.instance.df["ALFA"] = self.instance.df[["CHAVE"]].apply(self.calcular_grupo, axis=1)
+        self.instance.df["ALFA"] = self.instance.df.apply(lambda row: self.calcular_grupo(row), axis=1)
 
-        cromossomos = chromosome[self.qtd_variaveis:]
         grupos_provisorios = self.distribui_valores(tamanho, [i+1 for i in range(tamanho)])
         df_provisorio = pd.DataFrame(grupos_provisorios, columns=["GRUPOS"])
         concatenado = pd.concat([chaves_alfa, df_provisorio], axis=1)
@@ -146,26 +143,31 @@ class TSPDecoder():
 
         self.instance.df["GRUPO_PROVISORIO"] = self.instance.df.apply(self.definir_grupo_provisorio, axis=1)
 
-        cromossomos_df = pd.DataFrame(cromossomos, columns=['CROMOSSOMOS'])
-        cromossomos_df.reset_index(drop=True)
-
-        self.instance.df.reset_index(drop=True, inplace=True)
-        self.instance.df = pd.concat([self.instance.df, cromossomos_df], axis=1)
-
         alfa_list = self.instance.df["ALFA"].to_list()
         grupos_provisorios = self.instance.df["GRUPO_PROVISORIO"].to_list()
 
         grupo_final = self.calcular_grupo_final(grupos_provisorios, alfa_list)
 
-
         self.instance.df['GRUPO_FINAL'] = grupo_final
     
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
+        grupos = {}
         for i in range(0, tamanho):
-            self.instance.df[f"G{i+1}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i+1), axis=1)
+            grupos[f"G{i+1}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i+1), axis=1)
 
+        self.instance.df.reset_index(inplace=True)
+        g = pd.DataFrame(grupos)
+        self.instance.df.reset_index(drop=True, inplace=True)
+        g.reset_index(drop=True, inplace=True)
+        del self.instance.df["index"]
+        self.instance.df = pd.concat([self.instance.df, g], axis=1)
+        efetivados = {}
         for i in range(0, tamanho):
-            self.instance.df[f"E{i+1}"] = self.instance.df[f"G{i+1}"] * self.instance.df["Flag_Efet"]
+            efetivados[f"E{i+1}"] = self.instance.df[f"G{i+1}"] * self.instance.df["Flag_Efet"]
+        
+        e = pd.DataFrame(efetivados)
+        e.reset_index(drop=True, inplace=True)
+        self.instance.df = pd.concat([self.instance.df, e],axis=1)
 
         #Conta a quantidade de grupos por taxa
         contagem_grupos = (self.instance.df.set_index('Taxa').filter(regex='G[0-9]+').eq(1)
@@ -177,6 +179,7 @@ class TSPDecoder():
 
         tabela_unificada = pd.DataFrame(ls_contagem, columns=[f"G{i+1}" for i in range(0, tamanho)])
         tabela_unificada.index = taxas
+        ###########################################
 
         #conta a quantidade de efetivados por taxa
         contagem_efetivados = (self.instance.df.set_index('Taxa').filter(regex='E[0-9]+').eq(1)
@@ -185,7 +188,7 @@ class TSPDecoder():
         ls_efetivados = np.array(contagem_efetivados)
         tabela_efetivados = pd.DataFrame(ls_efetivados, columns=[f"G{i+1}" for i in range(0, tamanho)])
         tabela_efetivados.index = taxas
-
+        ############################################
 
         #gera a tabela de percentual grupo por taxa
         divisao = tabela_efetivados.div(tabela_unificada).reset_index()
@@ -194,7 +197,7 @@ class TSPDecoder():
         del divisao['index']
         divisao = divisao.transpose()
         
-        #se os clientes não estão em mais de um grupo, calcula o alfa
+        #calcula o alfa
         divisao["Alfa"] = divisao.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
         #converte o alfa e ordena
         item = divisao["Alfa"].to_list()
