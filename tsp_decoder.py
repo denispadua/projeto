@@ -21,6 +21,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
+from copy import copy
 from brkga_mp_ipr.types import BaseChromosome
 from tsp_instance import TSPInstance
 import numpy as np
@@ -45,7 +46,7 @@ class TSPDecoder():
 
         n = 5*soma_linha-sum(columns) * linhas_sem_taxas
         d = 5*sum(taxas_2) - sum(columns)**2
-        return (n / d)
+        return (n / d)*100
     
     def calcular_chave(self, row):
         chave = 0
@@ -56,6 +57,13 @@ class TSPDecoder():
     def calcular_grupo(self, row):
         return self.dict[int(row['CHAVE'])]
     
+    def retornar_grupo_final(self, row):
+        return int(self.dict_grupos[int(row['CHAVE'])])
+    
+    def mapear_grupo_final(self, row):
+        if self.dict_grupos.get(row["CHAVE"], None) is None:
+            self.dict_grupos[row["CHAVE"]] = row["GRUPO_FINAL"]
+
     def mapear_grupo(self, row):
         if self.dict_grupos.get(row["CHAVE"], None) is None:
             self.dict_grupos[row["CHAVE"]] = row["GRUPOS"]
@@ -78,27 +86,32 @@ class TSPDecoder():
         return self.dict_grupos.get(row['CHAVE'])
     
     def calcular_grupo_final(self, grupos_provisorios, alfa_list):
-        grupo_final = []
         alfa_list.sort()
+        
         for i in range(0, len(grupos_provisorios)-1):
             if grupos_provisorios[i] != grupos_provisorios[i+1]:
-                if abs(alfa_list[i+1] + alfa_list[i]) > abs(alfa_list[i] + alfa_list[i-1]):
-                    grupo_final.append(grupos_provisorios[i])
-                elif abs(alfa_list[i+1] + alfa_list[i]) < abs(alfa_list[i] + alfa_list[i-1]):
-                    grupo_final.append(grupos_provisorios[i+1])
-                else:
-                    grupo_final.append(grupos_provisorios[i])
-            else:
-                grupo_final.append(grupos_provisorios[i])
+                if abs(alfa_list[i+1] - alfa_list[i]) < abs(alfa_list[i] - alfa_list[i-1]):
+                    grupos_provisorios[i] = grupos_provisorios[i+1]
+            elif i > 0 and grupos_provisorios[i] != grupos_provisorios[i-1]:
+                if abs(alfa_list[i] - alfa_list[i-1]) < abs(alfa_list[i+1] - alfa_list[i]):
+                    grupos_provisorios[i] = grupos_provisorios[i-1]
                 
-        grupo_final.append(grupos_provisorios[len(grupos_provisorios)-1])
-        return grupo_final
+        return grupos_provisorios
+    
+    def setar_grupo_final(self, row):
+        return self.dict_grupos[row["CHAVE"]]
     
     def gerar_alfa_cliente(self, taxas):
         chave_taxa = pd.pivot_table(self.instance.df[["CHAVE", "Taxa"]], index='CHAVE', columns='Taxa', aggfunc=len, fill_value=0)
         chave_taxa = pd.DataFrame(chave_taxa, columns=taxas)
-        chave_taxa_alfa = chave_taxa.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
 
+        efetivado = pd.pivot_table(self.instance.df[["CHAVE", "Taxa", "Flag_Efet"]], index='CHAVE', columns=['Taxa'], aggfunc=sum, fill_value=0)
+        efetivado.columns = taxas
+        chave_efetivado = pd.DataFrame(efetivado, columns=taxas)
+        df_div = chave_efetivado.div(chave_taxa)
+
+        
+        chave_taxa_alfa = df_div.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
         self.dict = chave_taxa_alfa.to_dict()   
         tamanho = chave_taxa_alfa.count()
         chave_taxa_alfa = pd.DataFrame(chave_taxa_alfa, columns=["ALFA"]).reset_index("CHAVE")
@@ -128,29 +141,38 @@ class TSPDecoder():
         taxas.sort()
         
         chaves_alfa, tamanho = self.gerar_alfa_cliente(taxas)
-             
+        tamanho = self.qtd_grupos
 
         self.instance.df["ALFA"] = self.instance.df.apply(lambda row: self.calcular_grupo(row), axis=1)
 
-        grupos_provisorios = self.distribui_valores(tamanho, [i+1 for i in range(tamanho)])
+        grupos_provisorios = self.distribui_valores(len(chaves_alfa.index), [i+1 for i in range(tamanho)])
         df_provisorio = pd.DataFrame(grupos_provisorios, columns=["GRUPOS"])
         concatenado = pd.concat([chaves_alfa, df_provisorio], axis=1)
         del concatenado["index"]
 
-        self.instance.df.sort_values("CHAVE", inplace=True)
         concatenado.apply(self.mapear_grupo, axis=1)
+        # self.instance.df.sort_values("CHAVE", inplace=True)
         #Cria um dataframe de cromossomos G1,G2,G3 e G4
 
-        self.instance.df["GRUPO_PROVISORIO"] = self.instance.df.apply(self.definir_grupo_provisorio, axis=1)
+        # self.instance.df["GRUPO_PROVISORIO"] = self.instance.df.apply(self.definir_grupo_provisorio, axis=1)
 
-        alfa_list = self.instance.df["ALFA"].to_list()
-        grupos_provisorios = self.instance.df["GRUPO_PROVISORIO"].to_list()
+        alfa_list = concatenado["ALFA"].to_list()
+        grupos_provisorios = concatenado["GRUPOS"].to_list()
 
-        grupo_final = self.calcular_grupo_final(grupos_provisorios, alfa_list)
+        concatenado["GRUPO_FINAL"] = self.calcular_grupo_final(grupos_provisorios, alfa_list)
 
-        self.instance.df['GRUPO_FINAL'] = grupo_final
+        # grupo_final = self.calcular_grupo_final(grupos_provisorios, alfa_list)
+
+        # self.instance.df['GRUPO_FINAL'] = grupo_final
     
         #cria um dataframe com a multiplicação da coluna dos grupos pela coluna "Flag_Efet"
+
+        self.dict_grupos = {}
+        concatenado.apply(self.mapear_grupo_final, axis=1)
+
+
+        self.instance.df["GRUPO_FINAL"] = self.instance.df[["CHAVE"]].apply(self.retornar_grupo_final, axis=1)
+
         grupos = {}
         for i in range(0, tamanho):
             grupos[f"G{i+1}"] = self.instance.df[["CHAVE","GRUPO_FINAL"]].apply(lambda row: self.definir_grupo(row, i+1), axis=1)
@@ -214,5 +236,6 @@ class TSPDecoder():
             if total < self.qtd_min_por_grupo:
                 penalizacao += 1000
 
+        print(soma - penalizacao)
         return soma - penalizacao
 
