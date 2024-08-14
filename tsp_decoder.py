@@ -30,7 +30,7 @@ import pandas as pd
 
 class TSPDecoder():
 
-    def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int, qtd_min_por_grupo = 0):
+    def __init__(self, instance: TSPInstance, qtd_grupos: int, qtd_variaveis: int, alfa_medio: int, qtd_cliente_chave: int, qtd_min_por_grupo = 0):
         self.instance = instance
         self.df_original = self.instance.df.copy()
         self.qtd_grupos = qtd_grupos
@@ -38,6 +38,8 @@ class TSPDecoder():
         self.qtd_min_por_grupo = qtd_min_por_grupo
         self.dict = {}
         self.dict_grupos = {}
+        self.alfa_medio = alfa_medio
+        self.qtd_cliente_chave = qtd_cliente_chave
     
     def calcular_alfa(self, row, columns):
         soma_linha = sum([row[i]*i for i in columns])
@@ -101,20 +103,33 @@ class TSPDecoder():
     def setar_grupo_final(self, row):
         return self.dict_grupos[row["CHAVE"]]
     
+    def contar_clientes(self, row):
+        if row.sum() < self.qtd_cliente_chave:
+            return 0
+        return 1
+    
     def gerar_alfa_cliente(self, taxas):
         chave_taxa = pd.pivot_table(self.instance.df[["CHAVE", "Taxa"]], index='CHAVE', columns='Taxa', aggfunc=len, fill_value=0)
         chave_taxa = pd.DataFrame(chave_taxa, columns=taxas)
+
+        cliente_alfa_medio = chave_taxa.apply(self.contar_clientes, axis=1)
+        cliente_alfa_medio = cliente_alfa_medio.to_dict()
 
         efetivado = pd.pivot_table(self.instance.df[["CHAVE", "Taxa", "Flag_Efet"]], index='CHAVE', columns=['Taxa'], aggfunc=sum, fill_value=0)
         efetivado.columns = taxas
         chave_efetivado = pd.DataFrame(efetivado, columns=taxas)
         df_div = chave_efetivado.div(chave_taxa)
 
-        
         chave_taxa_alfa = df_div.apply(lambda row: self.calcular_alfa(row, taxas), axis=1)
         self.dict = chave_taxa_alfa.to_dict()   
         tamanho = chave_taxa_alfa.count()
-        chave_taxa_alfa = pd.DataFrame(chave_taxa_alfa, columns=["ALFA"]).reset_index("CHAVE")
+
+        for key in self.dict:
+            if self.dict[key] > 0 or cliente_alfa_medio[key] == 0:
+                self.dict[key] = self.alfa_medio
+
+        chave_taxa_alfa = pd.DataFrame(self.dict.items(), columns=["CHAVE", "ALFA"])
+        
         chave_taxa_alfa.sort_values("ALFA", inplace=True)
         chave_taxa_alfa.reset_index(inplace=True)
         return chave_taxa_alfa, tamanho
